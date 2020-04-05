@@ -24,6 +24,9 @@ class ProductObserver
         ]);
     }
 
+    /**
+     * @param Products $product
+     */
     public function retrieved(Products $product)
     {
         ReportViews::where('product_id', '=', $product->id)

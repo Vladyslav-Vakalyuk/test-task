@@ -3,12 +3,12 @@
 namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\GetReportByData;
+use App\Http\Requests\StoreProduct;
 use App\Products;
-use Illuminate\Http\Request;
-use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Validator;
-use \Illuminate\Database\Eloquent\ModelNotFoundException;
+use App\Repositories\Interfaces\ProductRepositoryInterface;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Http\Exceptions\HttpResponseException;
 
 class ProductController extends Controller
 {
@@ -30,19 +30,10 @@ class ProductController extends Controller
      * @param  \Illuminate\Http\Request $request
      * @return \Illuminate\Http\Response
      */
-    public function store(Request $request)
+    public function store(StoreProduct $request)
     {
-        $validator = Validator::make($request->all(), [
-            'title' => 'required|max:255',
-        ]);
-
-        if ($validator->fails()) {
-            return response()
-                ->json(['status' => 304, 'message' => $validator->getMessageBag()]);
-        }
-
         $product = Products::create([
-            'title' => $validator->attributes()['title'],
+            'title' => $request->title,
         ]);
         if ($product->save()) {
             return response()
@@ -61,14 +52,7 @@ class ProductController extends Controller
      */
     public function show($id)
     {
-        try {
-
-            $product = Products::findorfail($id);
-        } catch (ModelNotFoundException $e) {
-            return response()->json([
-                'message' => 'Record not found',
-            ], 404);
-        }
+        $product = $this->findOrFail($id);
 
         return response()
             ->json(['status' => 201, 'data' => $product]);
@@ -81,26 +65,11 @@ class ProductController extends Controller
      * @param  int $id
      * @return \Illuminate\Http\Response
      */
-    public function update(Request $request, $id)
+    public function update(StoreProduct $request, $id)
     {
-        $validator = Validator::make($request->all(), [
-            'title' => 'required|max:255',
-        ]);
+        $product = $this->findOrFail($id);
 
-        if ($validator->fails()) {
-            return response()
-                ->json(['status' => 304, 'message' => $validator->getMessageBag()]);
-        }
-
-        try {
-            $product = Products::findorfail($id);
-        } catch (ModelNotFoundException $e) {
-            return response()->json([
-                'message' => 'Record not found',
-            ], 404);
-        }
-
-        $product->title = $validator->attributes()['title'];
+        $product->title = $request->title;
 
         if ($product->save()) {
             return response()
@@ -119,14 +88,7 @@ class ProductController extends Controller
      */
     public function destroy($id)
     {
-        try {
-
-            $product = Products::findorfail($id);
-        } catch (ModelNotFoundException $e) {
-            return response()->json([
-                'message' => 'Record not found',
-            ], 404);
-        }
+        $product = $this->findOrFail($id);
 
         if ($product->delete()) {
             return response()
@@ -138,50 +100,47 @@ class ProductController extends Controller
     }
 
     /**
-     * @param Request $request
+     * @param GetReportByData $request
+     * @param ProductRepositoryInterface $repository
      * @return \Illuminate\Contracts\View\Factory|\Illuminate\View\View
-     * @throws \Illuminate\Validation\ValidationException
      */
-    public function reportByDate(Request $request)
+    public function reportByDate(GetReportByData $request, ProductRepositoryInterface $repository)
     {
-        $reportDate = DB::table('report')->select(DB::raw('FROM_UNIXTIME(UNIX_TIMESTAMP(created_at),\'%Y-%m-%d\') as date'))->distinct()->get();
-        $reportViewsDate = DB::table('report_views')->select(DB::raw('FROM_UNIXTIME(UNIX_TIMESTAMP(created_at),\'%Y-%m-%d\') as date'))->distinct()->get();
-        $dateSelect = Arr::collapse([$reportDate->toArray(), $reportViewsDate->toArray()]);
+        $date = isset($request->date) ? $request->date : null;
 
-        $validator = Validator::make($request->all(), [
-            'date' => 'required|date_format:Y-m-d',
-        ]);
-        if ($validator->fails()) {
-            return response()
-                ->json(['status' => 201, 'data' => ['dateSelect' => $dateSelect]]);
-        }
-
-        $products = !empty($validator->validated()['date']) ? DB::table('products')
-            ->select('products.id', 'products.title', 'report.created_at as report_created_at', 'report_views.created_at as report_views_created_at', DB::raw('SUM(report.purchased) as total_purchshed'), DB::raw('SUM(report_views.total_views) as total_views'))->groupBy('products.id', 'products.title', 'report.created_at', 'report_views.created_at')
-            ->join('report', 'products.id', '=', 'report.product_id')
-            ->join('report_views', 'products.id', '=', 'report_views.product_id')
-            ->whereBetween('report.created_at', [$validator->validated()['date'], date('Y-m-d', (strtotime($validator->validated()['date']) + (60 * 60 * 24)))])
-            ->whereBetween('report_views.created_at', [$validator->validated()['date'], date('Y-m-d', (strtotime($validator->validated()['date']) + (60 * 60 * 24)))])
-            ->get()
-            : false;
+        $products = $repository->getStatisticByDate($date)->get();
 
         return response()
-            ->json(['status' => 201, 'data' => ['dateSelect' => $dateSelect, 'products' => $products]]);
+            ->json(['status' => 201, 'data' => ['products' => $products]]);
 
     }
 
     /**
+     * @param ProductRepositoryInterface $repository
      * @return \Illuminate\Contracts\View\Factory|\Illuminate\View\View
      */
-    public function reportStatisticOrPercent()
+    public function reportStatisticOrPercent(ProductRepositoryInterface $repository)
     {
-
-        $percentCalculation = DB::table('products')
-            ->select('products.id', 'products.title', DB::raw('((SUM(report.purchased) / SUM(report_views.total_views))*100 ) percent'))->groupBy('products.id', 'products.title')
-            ->join('report', 'products.id', '=', 'report.product_id')
-            ->join('report_views', 'products.id', '=', 'report_views.product_id')
-            ->get();
+        $percentCalculation = $repository->getReportStatisticOrPercent();
 
         return response()->json(['status' => 201, 'data' => ['percentCalculation' => $percentCalculation]]);
+    }
+
+    /**
+     * @param $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function findOrFail($id)
+    {
+        try {
+            $product = Products::findorfail($id);
+        } catch (ModelNotFoundException $e) {
+            throw new HttpResponseException(response()->json([
+                'status' => 404,
+                'message' => 'Record not found',
+            ], 404));
+        }
+
+        return $product;
     }
 }

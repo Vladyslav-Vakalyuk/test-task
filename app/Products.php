@@ -4,6 +4,9 @@ namespace App;
 
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @method static findorfail($id)
+ */
 class Products extends Model
 {
     protected $table = 'products';
