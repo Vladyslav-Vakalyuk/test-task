@@ -13,6 +13,17 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
+
 Route::get('/', function () {
     return view('welcome');
 });
+
+//Route::get('/', 'ReportController@reportByDate');
+Route::get('/report-percent', 'ReportController@reportStatisticOrPercent')->name('reportOfPercent');
+Route::get('/user-report/{id}', 'UserController@eagerLoading')->name('eagerLoading');
+Route::match(['get', 'post'], '/report', 'ReportController@reportByDate')->name('report');
+
+Auth::routes();
+
+Route::get('/home', 'HomeController@index')->name('home');
+
