@@ -1,5 +1,6 @@
 ## About Laravel
 
+composer install
 #start migration
 php artisan migrate
 
